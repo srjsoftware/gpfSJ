@@ -46,7 +46,7 @@
 using namespace std;
 
 
-FileStats readInputFile(string &file, vector<Entry> &entries);
+FileStats readInputFile(string &filename, vector<Entry> &entries, vector<Entry> &entriesmid, float threshold);
 void allocVariables(DeviceVariables *dev_vars, Pair **similar_pairs, int num_terms, int block_size, int entries_size, int num_sets);
 void freeVariables(DeviceVariables *dev_vars, Pair **similar_pairs);
 void write_output(Pair *similar_pairs, int totalSimilars, stringstream &outputfile);
@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
-	vector<Entry> entries;
+	vector<Entry> entries, entriesmid;
 	float threshold = atof(argv[2]);
 	int gpuNum;
 
@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
 
 	string inputFileName(argv[1]);
 	printf("Reading file %s...\n", inputFileName.c_str());
-	FileStats stats = readInputFile(inputFileName, entries);
+	FileStats stats = readInputFile(inputFileName, entries, entriesmid, threshold);
 
 	ofstream ofsf(argv[3], ofstream::trunc);
 	ofsf.close();
@@ -159,41 +159,48 @@ int main(int argc, char **argv) {
 	return 0;
 }
 
-FileStats readInputFile(string &filename, vector<Entry> &entries) {
+FileStats readInputFile(string &filename, vector<Entry> &entries, vector<Entry> &entriesmid, float threshold) {
 	ifstream input(filename.c_str());
 	string line;
 
 	FileStats stats;
 	int accumulatedsize = 0;
-	int doc_id = 0;
+	int set_id = 0;
 
 	while (!input.eof()) {
 		getline(input, line);
 		if (line == "") continue;
 
 		vector<string> tokens = split(line, ' ');
-		//biggestQuerySize = max((int)tokens.size() / 2, biggestQuerySize);
 
 		int size = (tokens.size() - 2)/2;
 		stats.sizes.push_back(size);
 		stats.start.push_back(accumulatedsize);
 		accumulatedsize += size;
 
-		for (int i = 2, size = tokens.size(); i + 1 < size; i += 2) {
+		int midprefix = get_midprefix(size, threshold);
+
+		for (int i = 2, size = tokens.size(), j = 0; i + 1 < size; i += 2, j++) {
 			int term_id = atoi(tokens[i].c_str());
 			int term_count = atoi(tokens[i + 1].c_str());
 			stats.num_terms = max(stats.num_terms, term_id + 1);
-			entries.push_back(Entry(doc_id, term_id, term_count));
+			entries.push_back(Entry(set_id, term_id, term_count, j));
+
+			if (j <= midprefix) {
+				entriesmid.push_back(Entry(set_id, term_id, term_count, j));
+			}
 		}
-		doc_id++;
+
+		set_id++;
 	}
 
-	stats.num_sets = stats.start.size();
+	stats.num_sets = stats.sizes.size();
 
 	input.close();
 
 	return stats;
 }
+
 
 void allocVariables(DeviceVariables *dev_vars, Pair **similar_pairs, int num_terms, int block_size, int entries_size, int num_sets) {
 	// TODO alocar o tamanho certo para entries, probes e o índice invertido

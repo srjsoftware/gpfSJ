@@ -37,20 +37,6 @@
 #include "structs.cuh"
 #include "utils.cuh"
 #include "inverted_index.cuh"
-#include "cuCompactor.cuh"
-
-
-struct is_bigger_than_threshold
-{
-	float threshold;
-	is_bigger_than_threshold(float thr) : threshold(thr) {};
-	__host__ __device__
-	bool operator()(const Similarity &reg)
-	{
-		return (reg.distance > threshold);
-	}
-};
-
 
 __host__ int findSimilars(InvertedIndex index, float threshold, struct DeviceVariables *dev_vars, Pair *result,
 		int block_start, int block_size, int probes_offset, int indexed_block_size, int indexed_offset,
@@ -97,7 +83,7 @@ __global__ void calculateIntersection(InvertedIndex index, int *intersection, En
 			int list_start = list_end - list_size;
 
 			for (int k = list_start + threadIdx.x; k < list_end; k += blockDim.x) { // percorre a lista invertida
-				int idx_entry = index.d_inverted_index[k].doc_id;
+				int idx_entry = index.d_inverted_index[k].set_id;
 
 				if (idx_entry > probe_id && set_sizes[idx_entry] < maxsize)
 					atomicAdd(&intersection[i*block_size + idx_entry - indexed_offset], 1);
@@ -128,45 +114,3 @@ __global__ void calculateJaccardSimilarity(int *intersection, Pair *pairs, int *
 		}
 	}
 }
-
-/*
-
-__global__ void calculateCosineSimilarity(int *intersection, Pair *pairs, int *totalSimilars, int intersection_size,
-		int probes_offset, int indexed_offset, int threshold) {
-	int i = blockIdx.x*blockDim.x + threadIdx.x;
-
-	// TODO: filtrar menores que ele msm
-	for (; i < intersection_size; i += gridDim.x*blockDim.x) {
-		int x = i/block_size + probes_offset;
-		int y = i%block_size + indexed_offset;
-		int similarity = (float) intersection[i]/sqrt(sizes[x]*sizes[y]);
-
-		if (similarity >= threshold) {
-			Pair simpair = pairs[atomicAdd( totalSimilars, 1)];
-
-			simpair.set_x = x;
-			simpair.set_y = y;
-			simpair.similarity = similarity;
-		}
-	}
-}
-
-__global__ void calculateDiceSimilarity(int *intersection, Pair *pairs, int *totalSimilars, int intersection_size,
-		int probes_offset, int indexed_offset, int threshold) {
-	int i = blockIdx.x*blockDim.x + threadIdx.x;
-
-	// TODO: filtrar menores que ele msm
-	for (; i < intersection_size; i += gridDim.x*blockDim.x) {
-		int x = i/block_size + probes_offset;
-		int y = i%block_size + indexed_offset;
-		int similarity = (float) 2*intersection[i]/(sizes[x] + sizes[y]);
-
-		if (similarity >= threshold) {
-			Pair simpair = pairs[atomicAdd( totalSimilars, 1)];
-
-			simpair.set_x = x;
-			simpair.set_y = y;
-			simpair.similarity = similarity;
-		}
-	}
-}*/

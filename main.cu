@@ -1,6 +1,6 @@
 /*********************************************************************
 11
-12	 Copyright (C) 2016 by Sidney Ribeiro Junior
+12	 Copyright (C) 2017 by Sidney Ribeiro Junior
 13
 14	 This program is free software; you can redistribute it and/or modify
 15	 it under the terms of the GNU General Public License as published by
@@ -41,13 +41,12 @@
 
 
 #define OUTPUT 1
-#define NUM_STREAMS 1
 
 using namespace std;
 
 
 FileStats readInputFile(string &filename, vector<Entry> &entries, vector<Entry> &entriesmid, float threshold);
-void allocVariables(DeviceVariables *dev_vars, Pair **similar_pairs, int num_terms, int block_size, int entries_size, int num_sets);
+void allocVariables(DeviceVariables *dev_vars, Pair **similar_pairs, int num_terms, int block_size, int entries_size, int entriesmid_size, int num_sets);
 void freeVariables(DeviceVariables *dev_vars, Pair **similar_pairs);
 void write_output(Pair *similar_pairs, int totalSimilars, stringstream &outputfile);
 
@@ -103,21 +102,24 @@ int main(int argc, char **argv) {
 		DeviceVariables dev_vars;
 		Pair *similar_pairs;
 
-		allocVariables(&dev_vars, &similar_pairs, stats.num_terms, block_size, entries.size(), stats.num_sets);
+		allocVariables(&dev_vars, &similar_pairs, stats.num_terms, block_size, entries.size(), entriesmid.size(), stats.num_sets);
 		gpuAssert(cudaMemcpy(dev_vars.d_starts, &stats.start[0], stats.num_sets * sizeof(int), cudaMemcpyHostToDevice));
 		gpuAssert(cudaMemcpy(dev_vars.d_sizes, &stats.sizes[0], stats.num_sets * sizeof(int), cudaMemcpyHostToDevice));
+		gpuAssert(cudaMemcpy(dev_vars.d_entriesmid, &entriesmid[0], entriesmid.size() * sizeof(Entry), cudaMemcpyHostToDevice));
+		gpuAssert(cudaMemcpy(dev_vars.d_entries, &entries[0], entries.size() * sizeof(Entry), cudaMemcpyHostToDevice));
 
 		for (int i = gpuid; i < block_num; i+= gpuNum) {
 			int entries_block_start = i*block_size;
-			int entries_offset = stats.start[entries_block_start];
+			int entries_offset = stats.startmid[entries_block_start];
 			int last_set = entries_block_start + block_size >= stats.num_sets? stats.num_sets - 1: entries_block_start + block_size - 1;
 			int entries_block_size = last_set - entries_block_start + 1;
-			int entries_size = stats.start[last_set] + stats.sizes[last_set] - entries_offset;
+			int entries_size = stats.startmid[last_set] + get_midprefix(stats.sizes[last_set], threshold) - entries_offset;
 			//printf("=========Indexed Block %d=========\nset_offset = %d\nentrie_offset: %d\nlast_set: %d\nentries_size: %d\n", i, entries_block_start, entries_offset, last_set, entries_size);
 
 			// build the inverted index for block i of size block_size
-			index = make_inverted_index(stats.num_sets, stats.num_terms, entries_size, entries_offset, entries, &dev_vars);
-			//print_sets(entries, stats.sizes, stats.start); //print_invertedIndex(index);
+			index = make_inverted_index(stats.num_sets, stats.num_terms, entries_size, entries_offset, entriesmid, &dev_vars);
+
+			int indexed_offset = stats.start[entries_block_start];
 
 			for (int j = 0; j <= i; j++) { // calculate similarity between indexed sets and probe sets
 				int probe_block_start = j*block_size;
@@ -129,20 +131,13 @@ int main(int argc, char **argv) {
 				if (stats.sizes[last_probe] < threshold * stats.sizes[entries_block_start])
 					continue;
 
-				if (j < i) {
-					int probes_size = stats.start[last_probe] + stats.sizes[last_probe] - probes_offset;
-					gpuAssert(cudaMemcpy(dev_vars.d_probes, &entries[probes_offset], probes_size * sizeof(Entry), cudaMemcpyHostToDevice));
-				}
 				//printf("=========Probe Block %d=========\nprobe_block_start = %d\nprobe_offset: %d\nlast_probe: %d\nprobe_block_size: %d\n===============================\n", j, probe_block_start, probes_offset,last_probe, probe_block_size);
-
 				int totalSimilars = findSimilars(index, threshold, &dev_vars, similar_pairs, probe_block_start,
-						probe_block_size, probes_offset, entries_block_size, entries_block_start, i, j);
+						probe_block_size, probes_offset, entries_block_start, entries_block_size, indexed_offset);
 
-				//print_intersection(dev_vars.d_intersection, block_size, i, j);
-				//print_result(similar_pairs, totalSimilars);
+				//print_intersection(dev_vars.d_intersection, block_size, i, j); //print_result(similar_pairs, totalSimilars);
 				write_output(similar_pairs, totalSimilars, *outputString[gpuid]);
 			}
-
 		}
 
 		freeVariables(&dev_vars, &similar_pairs);
@@ -165,6 +160,7 @@ FileStats readInputFile(string &filename, vector<Entry> &entries, vector<Entry> 
 
 	FileStats stats;
 	int accumulatedsize = 0;
+	int accsizemid = 0;
 	int set_id = 0;
 
 	while (!input.eof()) {
@@ -179,6 +175,8 @@ FileStats readInputFile(string &filename, vector<Entry> &entries, vector<Entry> 
 		accumulatedsize += size;
 
 		int midprefix = get_midprefix(size, threshold);
+		stats.startmid.push_back(accsizemid);
+		accsizemid += midprefix;
 
 		for (int i = 2, size = tokens.size(), j = 0; i + 1 < size; i += 2, j++) {
 			int term_id = atoi(tokens[i].c_str());
@@ -186,7 +184,7 @@ FileStats readInputFile(string &filename, vector<Entry> &entries, vector<Entry> 
 			stats.num_terms = max(stats.num_terms, term_id + 1);
 			entries.push_back(Entry(set_id, term_id, term_count, j));
 
-			if (j <= midprefix) {
+			if (j < midprefix) {
 				entriesmid.push_back(Entry(set_id, term_id, term_count, j));
 			}
 		}
@@ -202,17 +200,16 @@ FileStats readInputFile(string &filename, vector<Entry> &entries, vector<Entry> 
 }
 
 
-void allocVariables(DeviceVariables *dev_vars, Pair **similar_pairs, int num_terms, int block_size, int entries_size, int num_sets) {
-	// TODO alocar o tamanho certo para entries, probes e o índice invertido
-
+void allocVariables(DeviceVariables *dev_vars, Pair **similar_pairs, int num_terms, int block_size, int entries_size,
+		int entriesmid_size, int num_sets) {
 	// Inverted index's variables
-	gpuAssert(cudaMalloc(&dev_vars->d_inverted_index, entries_size * sizeof(Entry)));
-	gpuAssert(cudaMalloc(&dev_vars->d_entries, entries_size * sizeof(Entry)));
+	gpuAssert(cudaMalloc(&dev_vars->d_inverted_index, entriesmid_size * sizeof(Entry)));
+	gpuAssert(cudaMalloc(&dev_vars->d_entriesmid, entriesmid_size * sizeof(Entry)));
 	gpuAssert(cudaMalloc(&dev_vars->d_index, num_terms * sizeof(int)));
 	gpuAssert(cudaMalloc(&dev_vars->d_count, num_terms * sizeof(int)));
 
 	// Variables used to perform the similarity join
-	gpuAssert(cudaMalloc(&dev_vars->d_probes, entries_size * sizeof(Entry)));
+	gpuAssert(cudaMalloc(&dev_vars->d_entries, entries_size * sizeof(Entry)));
 	gpuAssert(cudaMalloc(&dev_vars->d_intersection, (1 + block_size * block_size) * sizeof(int)));
 	gpuAssert(cudaMalloc(&dev_vars->d_pairs, block_size *block_size * sizeof(Pair)));
 	gpuAssert(cudaMalloc(&dev_vars->d_sizes, num_sets * sizeof(int)));
@@ -223,11 +220,11 @@ void allocVariables(DeviceVariables *dev_vars, Pair **similar_pairs, int num_ter
 
 void freeVariables(DeviceVariables *dev_vars, Pair **similar_pairs) {
 	cudaFree(&dev_vars->d_inverted_index);
-	cudaFree(&dev_vars->d_entries);
+	cudaFree(&dev_vars->d_entriesmid);
 	cudaFree(&dev_vars->d_index);
 	cudaFree(&dev_vars->d_count);
 
-	cudaFree(&dev_vars->d_probes);
+	cudaFree(&dev_vars->d_entries);
 	cudaFree(&dev_vars->d_intersection);
 	cudaFree(&dev_vars->d_pairs);
 	cudaFree(&dev_vars->d_sizes);

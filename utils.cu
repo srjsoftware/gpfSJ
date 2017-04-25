@@ -1,6 +1,7 @@
 /*********************************************************************
 11
 12	 Copyright (C) 2015 by Wisllay Vitrio
+42	 Copyright (C) 2017 by Sidney Ribeiro Junior
 13
 14	 This program is free software; you can redistribute it and/or modify
 15	 it under the terms of the GNU General Public License as published by
@@ -38,24 +39,6 @@
 #endif
 
 #ifdef __linux
-/*
-int gettimeofday(struct timeval* tv, struct timezone * tzp)
-{
-	struct __timeb32 systime;
-	_ftime32_s(&systime);
-	tv->tv_sec = systime.time;
-	tv->tv_usec = systime.millitm * 1000;
-	return 0;
-}
-double gettime() { // returns 0 seconds first time called
-	static struct timeval t0;
-	struct timeval tv;
-	gettimeofday(&tv, 0);
-	if (!t0.tv_sec)
-		t0 = tv;
-	return tv.tv_sec - t0.tv_sec + (tv.tv_usec - t0.tv_usec) / 1000000.;
-}*/
-
 
 double gettime() {
 	timespec ts;
@@ -109,8 +92,8 @@ void get_grid_config(dim3 &grid, dim3 &threads) {
 
 		//Adjust the grid dimensions based on the device properties
 		int num_blocks = devProp.multiProcessorCount;
-		lgrid = dim3(num_blocks);
-		lthreads = dim3(devProp.maxThreadsPerBlock);
+		lgrid = dim3(num_blocks*256);
+		lthreads = dim3(devProp.maxThreadsPerBlock/2);
 		//lgrid = dim3(8);
 		//lthreads = dim3(512);
 		flag = 1;
@@ -146,16 +129,3 @@ int get_maxprefix(int size, float threshold) {
 int max_size_jaccard(int size, float threshold) {
 	return ceil(((float) size)/threshold);
 }
-
-//__device__ float atomicAdd(float* address, float val)
-//{
-//    unsigned long long int* address_as_ull =
-//                          (unsigned long long int*)address;
-//    unsigned long long int old = *address_as_ull, assumed;
-//    do {
-//        assumed = old;
-//            old = atomicCAS(address_as_ull, assumed,__float_as_longlong(val +
-//                               __longlong_as_float(assumed)));
-//    } while (assumed != old);
-//    return __longlong_as_float(old);
-//}

@@ -1,6 +1,7 @@
 /*********************************************************************
 11
 12	 Copyright (C) 2015 by Wisllay Vitrio
+42	 Copyright (C) 2017 by Sidney Ribeiro Junior
 13
 14	 This program is free software; you can redistribute it and/or modify
 15	 it under the terms of the GNU General Public License as published by

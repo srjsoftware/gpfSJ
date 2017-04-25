@@ -1,6 +1,6 @@
 /*********************************************************************
 11
-12	 Copyright (C) 2015 by Wisllay Vitrio
+12	 Copyright (C) 2017 by Sidney Ribeiro Junior
 13
 14	 This program is free software; you can redistribute it and/or modify
 15	 it under the terms of the GNU General Public License as published by
@@ -18,27 +18,21 @@
 27
 28	 ********************************************************************/
 
-/*
- * knn.cuh
- *
- *  Created on: Dec 4, 2013
- *      Author: silvereagle
- */
 
 #ifndef KNN_CUH_
 #define SIMJOIN_CUH_
 
 #include "inverted_index.cuh"
 
-__host__ int findSimilars(InvertedIndex index, float threshold, struct DeviceVariables *dev_vars, Pair *result,
-		int block_start, int block_size, int probes_offset, int indexed_block_size, int indexed_offset,
-		int indexed_block, int probe_block);
+__host__ int findSimilars(InvertedIndex index, float threshold, struct DeviceVariables *dev_vars, Pair *similar_pairs,
+		int probes_start, int probe_block_size, int probes_offset,
+		int indexed_start, int indexed_block_size, int indexed_offset);
 
-__global__ void calculateIntersection(InvertedIndex index, int *intersection, Entry *probes, int *set_starts,
-		int *set_sizes, int block_start, int block_size, int probes_offset, int indexed_offset, float threshold);
+__global__ void generateCandidates(InvertedIndex index, int *intersection, Entry *probes, int *set_starts,
+		int *set_sizes, int probes_start, int block_size, int probes_offset, int indexed_start, float threshold);
 
-__global__ void calculateJaccardSimilarity(int *intersection, Pair *pairs, int *totalSimilars, int *sizes,
-		int intersection_size, int probes_offset, int indexed_offset, int block_size, int indexed_block_size,
-		float threshold);
+__global__ void verifyCandidates(int *intersection, Pair *pairs, Entry *probes, Entry *indexed_sets,
+		int *sizes, int *starts, int probes_offset, int indexed_offset, int probes_start, int indexed_start,
+		int probe_block_size, int indexed_block_size, int intersection_size, int *totalSimilars, float threshold);
 
 #endif /* KNN_CUH_ */

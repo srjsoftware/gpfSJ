@@ -169,7 +169,7 @@ FileStats readInputFile(string &filename, vector<Entry> &entries, vector<Entry> 
 
 		vector<string> tokens = split(line, ' ');
 
-		int size = (tokens.size() - 2)/2;
+		int size = tokens.size();
 		stats.sizes.push_back(size);
 		stats.start.push_back(accumulatedsize);
 		accumulatedsize += size;
@@ -178,18 +178,17 @@ FileStats readInputFile(string &filename, vector<Entry> &entries, vector<Entry> 
 		stats.startmid.push_back(accsizemid);
 		accsizemid += midprefix;
 
-		for (int i = 2, size = tokens.size(), j = 0; i + 1 < size; i += 2, j++) {
+		for (int i = 0; i < size; i++) {
 			int term_id = atoi(tokens[i].c_str());
-			int term_count = atoi(tokens[i + 1].c_str());
 			stats.num_terms = max(stats.num_terms, term_id + 1);
-			entries.push_back(Entry(set_id, term_id, term_count, j));
+			entries.push_back(Entry(set_id, term_id, i));
 
-			if (j < midprefix) {
-				entriesmid.push_back(Entry(set_id, term_id, term_count, j));
+			if (i < midprefix) {
+				entriesmid.push_back(Entry(set_id, term_id, i));
 			}
 		}
-
 		set_id++;
+
 	}
 
 	stats.num_sets = stats.sizes.size();

@@ -26,10 +26,9 @@ using namespace std;
 struct Entry {
     int set_id;
     int term_id;
-    int tf;
     int pos;
 
-    __host__ __device__ Entry(int doc_id, int term_id, int tf = 0, int pos = 0) : set_id(doc_id), term_id(term_id), tf(tf), pos(pos) {}
+    __host__ __device__ Entry(int doc_id, int term_id, int pos = 0) : set_id(doc_id), term_id(term_id), pos(pos) {}
 };
 
 struct Pair {
